@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gititdoneAMAN/harq/internal/tools"
 	"github.com/openai/openai-go/v3"
@@ -69,7 +71,14 @@ func RunAgent(client *openai.Client, prompt string){
 				location := args["file_path"].(string)
 				content := args["content"].(string)
 
-				message := tools.WriteFile(location, content)
+				var message string
+
+				if askUserForCommandApproval("Agent wants to write the content to the file", location) {
+					message = tools.WriteFile(location, content)
+				}else{
+					message = "Command execution denied by user."
+				}
+
 				params.Messages = append(params.Messages, openai.ToolMessage(message, toolCall.ID))
 			case "run_bash_command":
 				var args map[string]any
@@ -80,9 +89,31 @@ func RunAgent(client *openai.Client, prompt string){
 
 				command := args["command"].(string)
 
-				message := tools.RunBashCommand(command)
-				params.Messages = append(params.Messages, openai.ToolMessage(message, toolCall.ID))
+				var result string
+
+				if askUserForCommandApproval("Agent wants to run the command", command) {
+					result = tools.RunBashCommand(command)
+				}else{
+					result = "Command execution denied by user."
+				}
+
+				params.Messages = append(params.Messages, openai.ToolMessage(result, toolCall.ID))
 			}
 		}
+	}
+}
+
+func askUserForCommandApproval(warningMessage, command string) bool {
+	fmt.Printf("\n⚠️ %s : %s \n Allow? [y/Y] : ", warningMessage, command);
+	reader := bufio.NewReader(os.Stdin);
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	if input == "y" || input == "Y" {
+		println("Running command... with input: ", input)
+		return true
+	}else{
+		println("Command execution denied by user.");
+		return false;
 	}
 }
