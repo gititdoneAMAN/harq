@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gititdoneAMAN/harq/internal/prompts"
 	"github.com/gititdoneAMAN/harq/internal/tools"
 	"github.com/openai/openai-go/v3"
 )
@@ -21,7 +22,7 @@ func NewAgent(client *openai.Client) *Agent {
 	return &Agent{
 		Client: client,
 		History: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are a helpful AI assistant. You can read/write files and execute bash commands."),
+			openai.SystemMessage(prompts.GetSystemPrompt()),
 		},
 	}
 }
