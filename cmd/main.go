@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
+	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/gititdoneAMAN/harq/internal/agent"
 	"github.com/gititdoneAMAN/harq/internal/llm"
@@ -25,6 +29,32 @@ func main() {
 
 	client := llm.NewClient();
 
-	agent.RunAgent(client,prompt);
+	bot := agent.NewAgent(client)
+
+	if prompt != "" {
+        bot.Chat(prompt);
+    }
+
+    // Start Interactive Loop
+    fmt.Println("\nInteractive Mode Started. Type 'exit' to quit.")
+    reader := bufio.NewReader(os.Stdin)
+
+    for {
+        fmt.Print("\n>> ") // Prompt symbol
+        input, _ := reader.ReadString('\n')
+        input = strings.TrimSpace(input)
+
+        if input == "exit" || input == "quit" {
+            fmt.Println("Goodbye!")
+            break
+        }
+
+        if input == "" {
+            continue
+        }
+
+        bot.Chat(input)
+    }
+
 }
 

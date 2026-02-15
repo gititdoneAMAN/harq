@@ -8,7 +8,6 @@ import (
 )
 
 func ReadFile(filePath string) string {
-	println("-----------------TOOL-CALL------------------------")
 	println("Function called: read_file")
 	if filePath == "" {
 		return "File path is empty"
@@ -23,7 +22,6 @@ func ReadFile(filePath string) string {
 }
 
 func WriteFile(filePath string, content string) string {
-	println("-----------------TOOL-CALL------------------------")
 	println("Function called: write_file")
 	if filePath == "" {
 		return "File path is empty"
@@ -38,7 +36,6 @@ func WriteFile(filePath string, content string) string {
 }
 
 func RunBashCommand(command string) string {
-	println("-----------------TOOL-CALL------------------------")
 	println("Function called: run_bash_command")
 	if command == "" {
 		return "Command is empty"

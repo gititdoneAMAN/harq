@@ -12,108 +12,93 @@ import (
 	"github.com/openai/openai-go/v3"
 )
 
-func RunAgent(client *openai.Client, prompt string){
-	params := openai.ChatCompletionNewParams{
-		Model: os.Getenv("LLM_MODEL"),
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			{
-				OfUser: &openai.ChatCompletionUserMessageParam{
-					Content: openai.ChatCompletionUserMessageParamContentUnion{
-						OfString: openai.String(prompt),
-					},
-				},
-			},
-		},
-		Tools: tools.GetToolDefinitions(),
-	}
+type Agent struct {
+	Client *openai.Client
+	History []openai.ChatCompletionMessageParamUnion
+}
 
-	for {
-		resp, err := client.Chat.Completions.New(context.Background(),params)
+func NewAgent(client *openai.Client) *Agent {
+	return &Agent{
+		Client: client,
+		History: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are a helpful AI assistant. You can read/write files and execute bash commands."),
+		},
+	}
+}
+
+func (a *Agent)Chat(userPropmt string){
+	a.History = append(a.History, openai.UserMessage(userPropmt));
+
+	fmt.Printf("Thinking.....\n")
+
+	for{
+		params := openai.ChatCompletionNewParams{
+			Model: os.Getenv("LLM_MODEL"),
+			Messages: a.History,
+			Tools: tools.GetToolDefinitions(),
+		}
+
+		ctx:= context.Background()
+		resp, err := a.Client.Chat.Completions.New(ctx, params)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		
-		if len(resp.Choices[0].Message.ToolCalls) > 0 {
-			fmt.Printf("DEBUG: Tool calls: %+v\n", resp.Choices[0].Message.ToolCalls)
-		}
 
-		toolCalls := resp.Choices[0].Message.ToolCalls
+		msg:= resp.Choices[0].Message
+		toolCalls := msg.ToolCalls
+		a.History = append(a.History, msg.ToParam())
 
 		if len(toolCalls) == 0 {
 			fmt.Print(resp.Choices[0].Message.Content)
 			break
 		}
 
-		params.Messages = append(params.Messages, resp.Choices[0].Message.ToParam());
+		// if len(toolCalls) > 0 {
+		// 	fmt.Printf("DEBUG: Tool calls: %+v\n", resp.Choices[0].Message.ToolCalls)
+		// }
 
-		for _, toolCall := range toolCalls {
-			switch toolCall.Function.Name {
-            case "read_file":
-				var args map[string]any
-				err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-				if err!= nil{
-					panic("Error unmarshalling arguments")
-				}
+		 for _, toolCall := range toolCalls {
+            var result string
+            var args map[string]any
 
-				location := args["file_path"].(string)
+            if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+                result = fmt.Sprintf("Error parsing arguments: %v", err)
+            } else {
+                switch toolCall.Function.Name {
+                case "read_file":
+                    result = tools.ReadFile(args["file_path"].(string))
 
-				content := tools.ReadFile(location);
+                case "write_file":
+                    path := args["file_path"].(string)
+                    content := args["content"].(string)
+                    if askUserPermission(fmt.Sprintf("create/write file '%s'", path)) {
+                        result = tools.WriteFile(path, content)
+                    } else {
+                        result = "User denied file write permission."
+                    }
 
-				params.Messages = append(params.Messages, openai.ToolMessage(content, toolCall.ID))
-			case "write_file":
-				var args map[string]any
-				err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-				if err!=nil{
-					panic("Unmarshal error")
-				}
+                case "run_bash_command":
+                    cmd := args["command"].(string)
+                    if askUserPermission(fmt.Sprintf("run command '%s'", cmd)) {
+                        result = tools.RunBashCommand(cmd)
+                    } else {
+                        result = "User denied command execution."
+                    }
+                default:
+                    result = fmt.Sprintf("Tool %s not implemented", toolCall.Function.Name)
+                }
+            }
 
-				location := args["file_path"].(string)
-				content := args["content"].(string)
-
-				var message string
-
-				if askUserForCommandApproval("Agent wants to write the content to the file", location) {
-					message = tools.WriteFile(location, content)
-				}else{
-					message = "Command execution denied by user."
-				}
-
-				params.Messages = append(params.Messages, openai.ToolMessage(message, toolCall.ID))
-			case "run_bash_command":
-				var args map[string]any
-				err:=json.Unmarshal([]byte(toolCall.Function.Arguments),&args)
-				if err!=nil{
-					panic("Unmarshall error")
-				}
-
-				command := args["command"].(string)
-
-				var result string
-
-				if askUserForCommandApproval("Agent wants to run the command", command) {
-					result = tools.RunBashCommand(command)
-				}else{
-					result = "Command execution denied by user."
-				}
-
-				params.Messages = append(params.Messages, openai.ToolMessage(result, toolCall.ID))
-			}
-		}
-	}
+            a.History = append(a.History, openai.ToolMessage(result, toolCall.ID))
+        }
+    }
 }
 
-func askUserForCommandApproval(warningMessage, command string) bool {
-	fmt.Printf("\n⚠️ %s : %s \n Allow? [y/Y] : ", warningMessage, command);
-	reader := bufio.NewReader(os.Stdin);
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-
-	if input == "y" || input == "Y" {
-		println("Running command... with input: ", input)
-		return true
-	}else{
-		println("Command execution denied by user.");
-		return false;
-	}
+func askUserPermission(action string) bool {
+    fmt.Printf("⚠️  Agent wants to %s. Allow? [y/N]: ", action)
+    reader := bufio.NewReader(os.Stdin)
+    response, _ := reader.ReadString('\n')
+    response = strings.TrimSpace(response)
+    return strings.ToLower(response) == "y"
 }
